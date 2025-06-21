@@ -1,11 +1,8 @@
-name: Build and Publish Java Package
+name: Publish Package
 
 on:
   push:
-    branches:
-      - main
-      - develop
-      - 'feat/**'
+    branches: [main, develop, 'feat/**']
   release:
     types: [created]
 
@@ -18,17 +15,19 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Set up JDK 17
+      - name: Set up JDK
         uses: actions/setup-java@v4
         with:
           java-version: '17'
           distribution: 'temurin'
           cache: 'maven'
+          server-id: github
+          server-username: github
+          server-password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Build and publish to GitHub Packages
+      - name: Build and deploy
         run: mvn --batch-mode deploy
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
