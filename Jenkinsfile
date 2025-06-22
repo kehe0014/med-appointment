@@ -4,7 +4,7 @@ pipeline {
     environment {
         GITHUB_OWNER = 'kehe0014'
         GITHUB_REPO = 'med-appointment'
-        PACKAGES_URL = "https://maven.pkg.github.com/${GITHUB_OWNER}/${GITHUB_REPO}"
+        IMAGE_NAME = "ghcr.io/${GITHUB_OWNER}/appointment-app:latest"
     }
 
     stages {
@@ -14,76 +14,57 @@ pipeline {
             }
         }
 
-        stage('Verify GitHub Authentication') {
-            steps {
-                withCredentials([string(credentialsId: 'GITHUB_ACCESS_TOKEN', variable: 'GITHUB_TOKEN')]) {
-                    script {
-                        echo "🔐 Validating GitHub authentication..."
-
-                        def authStatus = sh(
-                            script: 'curl -s -o /dev/null -w "%{http_code}" ' +
-                                    '-H "Authorization: token $GITHUB_TOKEN" ' +
-                                    '-H "Accept: application/vnd.github.v3+json" ' +
-                                    'https://api.github.com/user',
-                            returnStdout: true
-                        ).trim()
-
-                        if (authStatus != "200") {
-                            error("❌ GitHub authentication failed (HTTP ${authStatus})")
-                        }
-                        echo "✅ GitHub authentication successful"
-                    }
-                }
-            }
-        }
-
-        stage('Setup Maven Settings') {
+        stage('GitHub Auth Test') {
             steps {
                 withCredentials([string(credentialsId: 'GITHUB_ACCESS_TOKEN', variable: 'GITHUB_TOKEN')]) {
                     sh '''
-                        mkdir -p $HOME/.m2
-                        cat > $HOME/.m2/settings.xml <<EOF
-<settings>
-  <servers>
-    <server>
-      <id>github</id>
-      <username>${GITHUB_OWNER}</username>
-      <password>${GITHUB_TOKEN}</password>
-    </server>
-  </servers>
-</settings>
-EOF
+                        echo "🔐 Test GitHub token..."
+                        curl -s -o /dev/null -w "%{http_code}" \
+                        -H "Authorization: token $GITHUB_TOKEN" \
+                        https://api.github.com/user | grep 200 || exit 1
                     '''
                 }
             }
         }
 
-        stage('Build') {
+        stage('Maven Build') {
             steps {
                 sh 'mvn clean package -DskipTests'
             }
         }
 
-        stage('Deploy') {
+        stage('Build Docker Image') {
             steps {
-                sh """
-                    mvn deploy -DskipTests \
-                    -DaltDeploymentRepository=github::default::${PACKAGES_URL}
-                """
+                sh 'docker compose -f docker-compose.yml build appointment-app'
+            }
+        }
+
+        stage('Tag and Push Image to GHCR') {
+            steps {
+                withCredentials([string(credentialsId: 'GITHUB_ACCESS_TOKEN', variable: 'GITHUB_TOKEN')]) {
+                    sh '''
+                        echo "${GITHUB_TOKEN}" | docker login ghcr.io -u ${GITHUB_OWNER} --password-stdin
+
+                        # Tag image (si `docker-compose build` produit `appointment-app:latest`)
+                        docker tag appointment-app:latest ${IMAGE_NAME}
+
+                        # Push vers GitHub Container Registry
+                        docker push ${IMAGE_NAME}
+                    '''
+                }
             }
         }
     }
 
     post {
         always {
-            sh 'rm -f $HOME/.m2/settings.xml || true'
-            echo "🧹 Cleaned up temporary settings.xml"
+            echo "🧹 Cleanup done"
         }
         success {
-            echo "🎉 Successfully deployed to GitHub Packages!"
+            echo "✅ Pipeline OK: image poussée sur GHCR"
         }
         failure {
-            echo "❌ Pipeline failed - check logs for details"
+            echo "❌ Échec - vérifie les étapes ci-dessus"
         }
     }
 }
