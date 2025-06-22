@@ -1,9 +1,9 @@
 services:
   appointment-app:
-    image: appointment-app
+    image: ghcr.io/kehe0014/appointment-app:latest
     build:
-      context: ./docker
-      dockerfile: Dockerfile
+      context: .                  # 🔥 racine du projet
+      dockerfile: docker/Dockerfile
     ports:
       - "9090:8080"
     environment:

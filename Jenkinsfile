@@ -4,6 +4,8 @@ pipeline {
     environment {
         GITHUB_OWNER = 'kehe0014'
         GITHUB_REPO = 'med-appointment'
+        IMAGE_NAME = "ghcr.io/${GITHUB_OWNER}/appointment-app"
+        IMAGE_TAG = "latest"
         PACKAGES_URL = "https://maven.pkg.github.com/${GITHUB_OWNER}/${GITHUB_REPO}"
     }
 
@@ -19,15 +21,13 @@ pipeline {
                 withCredentials([string(credentialsId: 'GITHUB_ACCESS_TOKEN', variable: 'GITHUB_TOKEN')]) {
                     script {
                         echo "🔐 Validating GitHub authentication..."
-
                         def authStatus = sh(
-                            script: 'curl -s -o /dev/null -w "%{http_code}" ' +
-                                    '-H "Authorization: token $GITHUB_TOKEN" ' +
-                                    '-H "Accept: application/vnd.github.v3+json" ' +
-                                    'https://api.github.com/user',
+                            script: '''curl -s -o /dev/null -w "%{http_code}" \
+                                -H "Authorization: token $GITHUB_TOKEN" \
+                                -H "Accept: application/vnd.github.v3+json" \
+                                https://api.github.com/user''',
                             returnStdout: true
                         ).trim()
-
                         if (authStatus != "200") {
                             error("❌ GitHub authentication failed (HTTP ${authStatus})")
                         }
@@ -37,53 +37,61 @@ pipeline {
             }
         }
 
-        stage('Setup Maven Settings') {
-            steps {
-                withCredentials([string(credentialsId: 'GITHUB_ACCESS_TOKEN', variable: 'GITHUB_TOKEN')]) {
-                    sh '''
-                        mkdir -p $HOME/.m2
-                        cat > $HOME/.m2/settings.xml <<EOF
-<settings>
-  <servers>
-    <server>
-      <id>github</id>
-      <username>${GITHUB_OWNER}</username>
-      <password>${GITHUB_TOKEN}</password>
-    </server>
-  </servers>
-</settings>
-EOF
-                    '''
-                }
-            }
-        }
-
-        stage('Build') {
+        stage('Build Maven Package') {
             steps {
                 sh 'mvn clean package -DskipTests'
             }
         }
 
-        stage('Deploy') {
+        stage('Build Docker Image') {
             steps {
-                sh """
-                    mvn deploy -DskipTests \
-                    -DaltDeploymentRepository=github::default::${PACKAGES_URL}
-                """
+                withCredentials([string(credentialsId: 'GITHUB_ACCESS_TOKEN', variable: 'GITHUB_TOKEN')]) {
+                    script {
+                        // Verify JAR file exists
+                        def jarFile = 'target/med-rdv-0.0.1-SNAPSHOT.jar'
+                        if (!fileExists(jarFile)) {
+                            error("❌ JAR file not found: ${jarFile}")
+                        }
+                        
+                        // Build docker image
+                        sh """
+                        docker build -f docker/Dockerfile \
+                        --build-arg JAR_FILE=${jarFile} \
+                        -t ${IMAGE_NAME}:${IMAGE_TAG} .
+                        """
+                    }
+                }
+            }
+        }
+
+        stage('Push Docker Image to GHCR') {
+            steps {
+                withCredentials([string(credentialsId: 'GITHUB_ACCESS_TOKEN', variable: 'GITHUB_TOKEN')]) {
+                    script {
+                        // Authenticate Docker to GHCR
+                        sh "echo $GITHUB_TOKEN | docker login ghcr.io -u ${GITHUB_OWNER} --password-stdin"
+
+                        // Push image
+                        sh "docker push ${IMAGE_NAME}:${IMAGE_TAG}"
+
+                        // Optional: logout for cleanup
+                        sh "docker logout ghcr.io"
+                    }
+                }
             }
         }
     }
 
     post {
-        always {
-            sh 'rm -f $HOME/.m2/settings.xml || true'
-            echo "🧹 Cleaned up temporary settings.xml"
-        }
         success {
-            echo "🎉 Successfully deployed to GitHub Packages!"
+            echo "🎉 Pipeline succeeded: image pushed to ${IMAGE_NAME}:${IMAGE_TAG}"
         }
         failure {
             echo "❌ Pipeline failed - check logs for details"
+        }
+        always {
+            // Cleanup Docker images to free space on agent
+            sh "docker rmi ${IMAGE_NAME}:${IMAGE_TAG} || true"
         }
     }
 }
