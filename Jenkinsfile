@@ -4,10 +4,8 @@ pipeline {
     environment {
         GITHUB_OWNER = 'kehe0014'
         GITHUB_REPO = 'med-appointment'
-        // GHCR requires lowercase package names
         IMAGE_NAME = "ghcr.io/${GITHUB_OWNER}/${GITHUB_REPO.toLowerCase()}"
         VERSION = sh(script: 'mvn help:evaluate -Dexpression=project.version -q -DforceStdout', returnStdout: true).trim()
-        // Convert version to lowercase and replace special characters
         SAFE_VERSION = "${VERSION}".toLowerCase().replace('-SNAPSHOT', '-snapshot')
     }
 
@@ -15,7 +13,6 @@ pipeline {
         stage('Checkout') {
             steps {
                 checkout scm
-                // Ensure Maven wrapper exists
                 sh 'mvn -N wrapper:wrapper || true'
             }
         }
@@ -47,28 +44,23 @@ pipeline {
 
         stage('Push to GHCR') {
             steps {
-                withCredentials([string(credentialsId: 'GITHUB_ACCESS_TOKEN', variable: 'GH_TOKEN']) {
+                withCredentials([string(credentialsId: 'GITHUB_ACCESS_TOKEN', variable: 'GH_TOKEN')]) {
                     script {
-                        // First authenticate - CRITICAL STEP
+                        // Authenticate
                         sh """
-                        echo "Authenticating with GHCR..."
                         echo \$GH_TOKEN | docker login ghcr.io \
                           -u ${GITHUB_OWNER} \
                           --password-stdin || exit 1
                         """
                         
-                        // Push with retry logic
+                        // Push with retry
                         retry(3) {
                             sh """
-                            echo "Pushing ${IMAGE_NAME}:${SAFE_VERSION}"
                             docker push ${IMAGE_NAME}:${SAFE_VERSION}
-                            
-                            echo "Pushing ${IMAGE_NAME}:latest"
                             docker push ${IMAGE_NAME}:latest
                             """
                         }
                         
-                        // Cleanup authentication
                         sh "docker logout ghcr.io"
                     }
                 }
@@ -81,8 +73,6 @@ pipeline {
             }
             steps {
                 echo "🚀 Deployment would execute here"
-                // Example:
-                // sh "kubectl set image deployment/${GITHUB_REPO} ${GITHUB_REPO}=${IMAGE_NAME}:${SAFE_VERSION}"
             }
         }
     }
@@ -90,7 +80,6 @@ pipeline {
     post {
         always {
             script {
-                // Cleanup images
                 sh """
                 docker rmi ${IMAGE_NAME}:${SAFE_VERSION} || true
                 docker rmi ${IMAGE_NAME}:latest || true
@@ -98,9 +87,9 @@ pipeline {
             }
         }
         success {
-            echo "🎉 Success! Image pushed to:"
-            echo " - ${IMAGE_NAME}:${SAFE_VERSION}"
-            echo " - ${IMAGE_NAME}:latest"
+            echo "🎉 Success! Image pushed to GHCR"
+            echo "- ${IMAGE_NAME}:${SAFE_VERSION}"
+            echo "- ${IMAGE_NAME}:latest"
         }
         failure {
             echo "❌ Pipeline failed - check logs"
