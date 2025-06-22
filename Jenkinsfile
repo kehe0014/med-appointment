@@ -48,7 +48,7 @@ pipeline {
                 withCredentials([string(credentialsId: 'GITHUB_ACCESS_TOKEN', variable: 'GITHUB_TOKEN')]) {
                     script {
                         // Verify JAR file exists
-                        def jarFile = 'target/Appointment-0.0.1-SNAPSHOT.jar'
+                        def jarFile = 'target/med-rdv-0.0.1-SNAPSHOT.jar'
                         if (!fileExists(jarFile)) {
                             error("❌ JAR file not found: ${jarFile}")
                         }
