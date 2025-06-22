@@ -3,7 +3,7 @@ pipeline {
 
     environment {
         GITHUB_USER = 'kehe0014'
-        GITHUB_REPO = 'healtcare-med-rdv-scheduler'
+        GITHUB_REPO = 'med-appointment'
         GITHUB_TOKEN = credentials('GITHUB_ACESS_TOKEN') // Jenkins Credentials ID
     }
 
