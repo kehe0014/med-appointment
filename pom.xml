@@ -11,7 +11,7 @@
 	<groupId>com.tdksoft</groupId>
 	<artifactId>med-rdv</artifactId>
 	<version>0.0.1-SNAPSHOT</version>
-	<name>Appointment</name>
+	<name>appointment</name>
 	<description>Spring Boot Appointment Project</description>
 	<properties>
 		<java.version>11</java.version>
