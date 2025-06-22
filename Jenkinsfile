@@ -2,10 +2,10 @@ pipeline {
     agent any
 
     environment {
-        // Configure these values
         GITHUB_OWNER = 'kehe0014'
         GITHUB_REPO = 'med-appointment'
         PACKAGES_URL = "https://maven.pkg.github.com/${env.GITHUB_OWNER}/${env.GITHUB_REPO}"
+        MAVEN_OPTS = "-Dmaven.wagon.http.ssl.insecure=true -Dmaven.wagon.http.ssl.allowall=true"
     }
 
     stages {
@@ -13,35 +13,58 @@ pipeline {
             steps {
                 withCredentials([string(credentialsId: 'GITHUB_ACCESS_TOKEN', variable: 'GITHUB_TOKEN')]) {
                     script {
-                        echo "🔍 Checking access to GitHub Packages at ${env.PACKAGES_URL}"
-                        
-                        // Safe curl command without Groovy interpolation
+                        echo "🔍 Checking GitHub Packages access..."
                         def statusCode = sh(returnStdout: true, script: """
                             curl -s -o /dev/null -w '%{http_code}' \
                             -H "Authorization: token ${env.GITHUB_TOKEN}" \
                             ${env.PACKAGES_URL}/
                         """).trim()
 
-                        echo "GitHub Packages response: HTTP ${statusCode}"
-
-                        // Handle responses
-                        if (statusCode == "200") {
-                            echo "✅ Package repository is accessible"
-                        } else if (statusCode == "404") {
-                            echo "⚠️ Package repository not found (404)"
-                            // Continue instead of failing if you want
-                        } else {
-                            error("❌ Access check failed (HTTP ${statusCode})")
+                        if (statusCode != "200") {
+                            error("❌ GitHub Packages inaccessible (HTTP ${statusCode})")
                         }
+                        echo "✅ GitHub Packages accessible"
                     }
+                }
+            }
+        }
+
+        stage('Build with Maven') {
+            steps {
+                withCredentials([string(credentialsId: 'GITHUB_ACCESS_TOKEN', variable: 'GITHUB_TOKEN')]) {
+                    sh """
+                        mvn clean package \
+                        -DskipTests \
+                        -Dgithub.owner=${env.GITHUB_OWNER} \
+                        -Dgithub.repo=${env.GITHUB_REPO} \
+                        -Dgithub.token=${env.GITHUB_TOKEN}
+                    """
+                }
+            }
+        }
+
+        stage('Deploy to GitHub Packages') {
+            steps {
+                withCredentials([string(credentialsId: 'GITHUB_ACCESS_TOKEN', variable: 'GITHUB_TOKEN')]) {
+                    sh """
+                        mvn deploy \
+                        -DskipTests \
+                        -DaltDeploymentRepository=github::${env.PACKAGES_URL} \
+                        -Dgithub.owner=${env.GITHUB_OWNER} \
+                        -Dgithub.repo=${env.GITHUB_REPO} \
+                        -Dgithub.token=${env.GITHUB_TOKEN}
+                    """
                 }
             }
         }
     }
 
     post {
-        always {
-            echo "📋 Access check completed"
+        success {
+            echo "🎉 Successfully built and deployed to GitHub Packages!"
+        }
+        failure {
+            echo "❌ Pipeline failed - check logs for details"
         }
     }
 }
