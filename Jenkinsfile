@@ -40,6 +40,7 @@ pipeline {
         stage('Build JAR') {
             steps {
                 sh 'mvn clean package -DskipTests'
+                sh 'ls -la target/' //Debugging step to list files in target directory
             }
         }
 

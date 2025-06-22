@@ -2,9 +2,8 @@ FROM eclipse-temurin:21-jre-jammy
 
 WORKDIR /app
 
-# Le JAR est copié depuis le context racine du projet
-ARG JAR_FILE=target/Appointment-0.0.1-SNAPSHOT.jar
-COPY ${JAR_FILE} app.jar
+# Copie directe du fichier JAR
+COPY target/Appointment-0.0.1-SNAPSHOT.jar app.jar
 
 EXPOSE 9090
 
