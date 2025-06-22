@@ -62,6 +62,15 @@
     </plugins>
 </build>
 <distributionManagement>
-	
+	<repository>
+		<id>github</id>
+		<name>GitHub Packages</name>
+		<url>https://maven.pkg.github.com/kehe0014/med-appointment</url>
+	</repository>
+	<snapshotRepository>
+		<id>github-snapshots</id>
+		<name>GitHub Packages Snapshots</name>
+		<url>https://maven.pkg.github.com/kehe0014/med-appointment</url>
+	</snapshotRepository>
 </distributionManagement>
 </project>
