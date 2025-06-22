@@ -5,6 +5,7 @@ pipeline {
         GITHUB_OWNER = 'kehe0014'
         GITHUB_REPO = 'med-appointment'
         PACKAGES_URL = "https://maven.pkg.github.com/${env.GITHUB_OWNER}/${env.GITHUB_REPO}"
+        MAVEN_HOME = tool 'M3' // Ensure Maven is configured in Jenkins
     }
 
     stages {
@@ -18,38 +19,21 @@ pipeline {
             steps {
                 withCredentials([string(credentialsId: 'GITHUB_ACCESS_TOKEN', variable: 'GITHUB_TOKEN')]) {
                     script {
-                        echo "🔐 Validating GitHub Packages access..."
+                        echo "🔐 Validating GitHub authentication..."
                         
-                        // Test authentication with a simple API call
+                        // Test basic GitHub API access
                         def authStatus = sh(
-                            script: """
-                                curl -s -o /dev/null -w '%{http_code}' \
-                                -H "Authorization: token ${env.GITHUB_TOKEN}" \
-                                -H "Accept: application/vnd.github.v3+json" \
-                                https://api.github.com/user
-                            """,
+                            script: 'curl -s -o /dev/null -w "%{http_code}" ' +
+                                   '-H "Authorization: token $GITHUB_TOKEN" ' +
+                                   '-H "Accept: application/vnd.github.v3+json" ' +
+                                   'https://api.github.com/user',
                             returnStdout: true
                         ).trim()
 
                         if (authStatus != "200") {
-                            error("❌ GitHub authentication failed (HTTP ${authStatus}). Check token permissions.")
+                            error("❌ GitHub authentication failed (HTTP ${authStatus})")
                         }
                         echo "✅ GitHub authentication successful"
-                        
-                        // Additional check for packages access
-                        def packagesStatus = sh(
-                            script: """
-                                curl -s -o /dev/null -w '%{http_code}' \
-                                -H "Authorization: token ${env.GITHUB_TOKEN}" \
-                                ${env.PACKAGES_URL}/
-                            """,
-                            returnStdout: true
-                        ).trim()
-
-                        echo "GitHub Packages access check: HTTP ${packagesStatus}"
-                        if (packagesStatus == "401" || packagesStatus == "403") {
-                            error("❌ Insufficient permissions for GitHub Packages")
-                        }
                     }
                 }
             }
@@ -65,27 +49,27 @@ pipeline {
             steps {
                 withCredentials([string(credentialsId: 'GITHUB_ACCESS_TOKEN', variable: 'GITHUB_TOKEN')]) {
                     script {
-                        // Create settings.xml with token authentication
-                        sh """
-                            mkdir -p \$HOME/.m2
-                            cat > \$HOME/.m2/settings.xml <<EOF
-                            <settings>
-                                <servers>
-                                    <server>
-                                        <id>github</id>
-                                        <username>\${env.GITHUB_OWNER}</username>
-                                        <password>\${env.GITHUB_TOKEN}</password>
-                                    </server>
-                                </servers>
-                            </settings>
-                            EOF
+                        // Create temporary settings.xml with proper escaping
+                        writeFile file: 'settings.xml', text: """
+                        <settings>
+                            <servers>
+                                <server>
+                                    <id>github</id>
+                                    <username>${env.GITHUB_OWNER}</username>
+                                    <password>${env.GITHUB_TOKEN}</password>
+                                </server>
+                            </servers>
+                        </settings>
                         """
                         
                         // Deploy with authenticated settings
                         sh """
-                            mvn deploy -DskipTests \
+                            mvn -s settings.xml deploy -DskipTests \
                             -DaltDeploymentRepository=github::default::${env.PACKAGES_URL}
                         """
+                        
+                        // Clean up (optional)
+                        sh 'rm -f settings.xml'
                     }
                 }
             }
@@ -97,7 +81,7 @@ pipeline {
             echo "🎉 Successfully deployed to GitHub Packages!"
         }
         failure {
-            echo "❌ Pipeline failed - check authentication and permissions"
+            echo "❌ Pipeline failed - check logs for details"
         }
     }
 }
