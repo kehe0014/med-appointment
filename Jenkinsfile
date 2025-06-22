@@ -1,5 +1,7 @@
 pipeline {
-    agent any
+        agent {
+        label 'tdk-desk-agent-01' // Use my dedicated worker from my local network
+    }
 
     environment {
         GITHUB_OWNER = 'kehe0014'
