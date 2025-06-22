@@ -14,11 +14,6 @@ pipeline {
             }
         }
 
-        stage('Build with Maven') {
-            steps {
-                sh 'mvn clean package -DskipTests'
-            }
-        }
     
         stage('Vérifier l’accès à GitHub Packages') {
           steps {
@@ -35,32 +30,7 @@ pipeline {
             }
           }
         }
-
-
-        stage('Publish to GitHub Packages') {
-            steps {
-                withCredentials([string(credentialsId: 'GITHUB_ACESS_TOKEN', variable: 'GITHUB_TOKEN')]) {
-                    writeFile file: 'settings.xml', text: """
-                        <settings>
-                        <servers>
-                            <server>
-                            <id>github</id>
-                            <username>${env.GITHUB_USER}</username>
-                            <password>${env.GITHUB_TOKEN}</password>
-                            </server>
-                            <server>
-                            <id>github-snapshots</id>
-                            <username>${env.GITHUB_USER}</username>
-                            <password>${env.GITHUB_TOKEN}</password>
-                            </server>
-                        </servers>
-                        </settings>
-                    """
-                    sh 'mvn deploy --settings settings.xml -DskipTests'
-                }
-            }
-        }
-
+  // -----------------------------------
     }
 
     post {
