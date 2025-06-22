@@ -66,6 +66,21 @@ pipeline {
     }
 
     post {
+        success {
+            slackSend(
+                color: 'good',
+                message: "✅ Success: ${env.JOB_NAME} #${env.BUILD_NUMBER}\n" +
+                        "Version: ${VERSION}\n" +
+                        "Image: ${IMAGE_NAME}:${VERSION}"
+            )
+        }
+        failure {
+            slackSend(
+                color: 'danger',
+                message: "❌ Failed: ${env.JOB_NAME} #${env.BUILD_NUMBER}\n" +
+                        "See: ${env.BUILD_URL}"
+            )
+        }
         always {
             // Cleanup Docker images
             script {
