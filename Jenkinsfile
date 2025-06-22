@@ -5,7 +5,6 @@ pipeline {
         GITHUB_OWNER = 'kehe0014'
         GITHUB_REPO = 'med-appointment'
         PACKAGES_URL = "https://maven.pkg.github.com/${env.GITHUB_OWNER}/${env.GITHUB_REPO}"
-        MAVEN_HOME = tool 'M3' // Ensure Maven is configured in Jenkins
     }
 
     stages {
@@ -49,27 +48,27 @@ pipeline {
             steps {
                 withCredentials([string(credentialsId: 'GITHUB_ACCESS_TOKEN', variable: 'GITHUB_TOKEN')]) {
                     script {
-                        // Create temporary settings.xml with proper escaping
-                        writeFile file: 'settings.xml', text: """
-                        <settings>
-                            <servers>
-                                <server>
-                                    <id>github</id>
-                                    <username>${env.GITHUB_OWNER}</username>
-                                    <password>${env.GITHUB_TOKEN}</password>
-                                </server>
-                            </servers>
-                        </settings>
-                        """
+                        // Create temporary settings.xml
+                        sh '''
+                            mkdir -p $HOME/.m2
+                            cat > $HOME/.m2/settings.xml <<EOF
+                            <settings>
+                                <servers>
+                                    <server>
+                                        <id>github</id>
+                                        <username>${GITHUB_OWNER}</username>
+                                        <password>${GITHUB_TOKEN}</password>
+                                    </server>
+                                </servers>
+                            </settings>
+                            EOF
+                        '''
                         
                         // Deploy with authenticated settings
                         sh """
-                            mvn -s settings.xml deploy -DskipTests \
+                            mvn deploy -DskipTests \
                             -DaltDeploymentRepository=github::default::${env.PACKAGES_URL}
                         """
-                        
-                        // Clean up (optional)
-                        sh 'rm -f settings.xml'
                     }
                 }
             }
