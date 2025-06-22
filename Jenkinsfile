@@ -22,16 +22,28 @@ pipeline {
 
         stage('Publish to GitHub Packages') {
             steps {
-                withEnv(["MAVEN_OPTS=-Xmx1024m"]) {
-                    sh """
-                    mvn deploy \
-                        -DaltDeploymentRepository=github::default::https://maven.pkg.github.com/${GITHUB_USER}/${GITHUB_REPO} \
-                        -Dusername=${GITHUB_USER} \
-                        -Dpassword=${GITHUB_TOKEN}
+                withCredentials([string(credentialsId: 'GITHUB_ACESS_TOKEN', variable: 'GITHUB_TOKEN')]) {
+                    writeFile file: 'settings.xml', text: """
+                        <settings>
+                        <servers>
+                            <server>
+                            <id>github</id>
+                            <username>${env.GITHUB_USER}</username>
+                            <password>${env.GITHUB_TOKEN}</password>
+                            </server>
+                            <server>
+                            <id>github-snapshots</id>
+                            <username>${env.GITHUB_USER}</username>
+                            <password>${env.GITHUB_TOKEN}</password>
+                            </server>
+                        </servers>
+                        </settings>
                     """
+                    sh 'mvn deploy --settings settings.xml -DskipTests'
                 }
             }
         }
+
     }
 
     post {
