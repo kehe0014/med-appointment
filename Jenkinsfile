@@ -5,6 +5,8 @@ pipeline {
         GITHUB_OWNER = 'kehe0014'
         GITHUB_REPO = 'med-appointment'
         IMAGE_NAME = "ghcr.io/${GITHUB_OWNER}/${GITHUB_REPO.toLowerCase()}"
+        // Get exact JAR filename from Maven build
+        JAR_FILE = sh(script: 'find target -name "*.jar" -printf "%f\n" | head -1', returnStdout: true).trim()
         VERSION = sh(script: 'mvn help:evaluate -Dexpression=project.version -q -DforceStdout', returnStdout: true).trim()
         SAFE_VERSION = "${VERSION}".toLowerCase().replace('-SNAPSHOT', '-snapshot')
     }
@@ -21,10 +23,10 @@ pipeline {
             steps {
                 sh './mvnw clean package -DskipTests'
                 script {
-                    def jarFile = "target/${GITHUB_REPO}-${VERSION}.jar"
-                    if (!fileExists(jarFile)) {
-                        error("❌ JAR file not found: ${jarFile}")
+                    if (!fileExists("target/${JAR_FILE}")) {
+                        error("❌ JAR file not found: target/${JAR_FILE}")
                     }
+                    echo "✅ Found JAR file: target/${JAR_FILE}"
                 }
             }
         }
@@ -34,7 +36,7 @@ pipeline {
                 script {
                     sh """
                     docker build -f docker/Dockerfile \
-                      --build-arg JAR_FILE=target/${GITHUB_REPO}-${VERSION}.jar \
+                      --build-arg JAR_FILE=target/${JAR_FILE} \
                       -t ${IMAGE_NAME}:${SAFE_VERSION} \
                       -t ${IMAGE_NAME}:latest .
                     """
@@ -46,14 +48,12 @@ pipeline {
             steps {
                 withCredentials([string(credentialsId: 'GITHUB_ACCESS_TOKEN', variable: 'GH_TOKEN')]) {
                     script {
-                        // Authenticate
                         sh """
                         echo \$GH_TOKEN | docker login ghcr.io \
                           -u ${GITHUB_OWNER} \
                           --password-stdin || exit 1
                         """
                         
-                        // Push with retry
                         retry(3) {
                             sh """
                             docker push ${IMAGE_NAME}:${SAFE_VERSION}
