@@ -54,23 +54,18 @@
 	</dependencies>
 
 <build>
-    <plugins>
-        <plugin>
-            <groupId>org.springframework.boot</groupId>
-            <artifactId>spring-boot-maven-plugin</artifactId>
-        </plugin>
-    </plugins>
+    <extensions>
+        <extension>
+            <groupId>org.apache.maven.wagon</groupId>
+            <artifactId>wagon-http</artifactId>
+            <version>3.5.3</version>
+        </extension>
+    </extensions>
 </build>
 <distributionManagement>
-	<repository>
-		<id>github</id>
-		<name>GitHub Packages</name>
-		<url>https://maven.pkg.github.com/kehe0014/med-appointment</url>
-	</repository>
-	<snapshotRepository>
-		<id>github-snapshots</id>
-		<name>GitHub Packages Snapshots</name>
-		<url>https://maven.pkg.github.com/kehe0014/med-appointment</url>
-	</snapshotRepository>
+    <repository>
+        <id>github</id>
+        <url>https://maven.pkg.github.com/kehe0014/med-appointment</url>
+    </repository>
 </distributionManagement>
 </project>
