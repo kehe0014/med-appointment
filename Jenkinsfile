@@ -47,11 +47,17 @@ pipeline {
             steps {
                 withCredentials([string(credentialsId: 'GITHUB_ACCESS_TOKEN', variable: 'GITHUB_TOKEN')]) {
                     script {
-                        // Build docker image with the jar produced by Maven
+                        // Verify JAR file exists
+                        def jarFile = 'target/Appointment-0.0.1-SNAPSHOT.jar'
+                        if (!fileExists(jarFile)) {
+                            error("❌ JAR file not found: ${jarFile}")
+                        }
+                        
+                        // Build docker image
                         sh """
                         docker build -f docker/Dockerfile \
-                          --build-arg JAR_FILE=target/Appointment-0.0.1-SNAPSHOT.jar \
-                          -t ${IMAGE_NAME}:${IMAGE_TAG} .
+                        --build-arg JAR_FILE=${jarFile} \
+                        -t ${IMAGE_NAME}:${IMAGE_TAG} .
                         """
                     }
                 }
