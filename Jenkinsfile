@@ -55,7 +55,7 @@ pipeline {
             }
             steps {
                 script {
-                    // Example deployment command - adjust for your environment
+                    
                     sh """
                     kubectl set image deployment/appointment-app \
                     appointment-app=${IMAGE_NAME}:${VERSION} --record
