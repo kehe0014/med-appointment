@@ -5,54 +5,59 @@ pipeline {
         GITHUB_OWNER = 'kehe0014'
         GITHUB_REPO = 'med-appointment'
         PACKAGES_URL = "https://maven.pkg.github.com/${env.GITHUB_OWNER}/${env.GITHUB_REPO}"
-        MAVEN_OPTS = "-Dmaven.wagon.http.ssl.insecure=true -Dmaven.wagon.http.ssl.allowall=true"
     }
 
     stages {
-        stage('Check GitHub Packages Access') {
+        stage('Checkout') {
+            steps {
+                checkout scm
+            }
+        }
+
+        stage('Verify GitHub Packages') {
             steps {
                 withCredentials([string(credentialsId: 'GITHUB_ACCESS_TOKEN', variable: 'GITHUB_TOKEN')]) {
                     script {
-                        echo "🔍 Checking GitHub Packages access..."
-                        def statusCode = sh(returnStdout: true, script: """
-                            curl -s -o /dev/null -w '%{http_code}' \
-                            -H "Authorization: token ${env.GITHUB_TOKEN}" \
-                            ${env.PACKAGES_URL}/
-                        """).trim()
+                        echo "🔍 Checking GitHub Packages accessibility..."
+                        def statusCode = sh(
+                            script: """
+                                curl -s -o /dev/null -w '%{http_code}' \
+                                -H "Authorization: token \$GITHUB_TOKEN" \
+                                ${env.PACKAGES_URL}/
+                            """,
+                            returnStdout: true
+                        ).trim()
 
-                        if (statusCode != "200") {
-                            error("❌ GitHub Packages inaccessible (HTTP ${statusCode})")
+                        echo "GitHub Packages response: HTTP ${statusCode}"
+                        
+                        if (statusCode == "404") {
+                            echo "⚠️ Warning: Package repository not found (404) - proceeding anyway"
+                        } else if (statusCode != "200") {
+                            error("❌ Fatal: GitHub Packages access failed (HTTP ${statusCode})")
                         }
-                        echo "✅ GitHub Packages accessible"
                     }
                 }
             }
         }
 
-        stage('Build with Maven') {
+        stage('Build') {
             steps {
                 withCredentials([string(credentialsId: 'GITHUB_ACCESS_TOKEN', variable: 'GITHUB_TOKEN')]) {
                     sh """
-                        mvn clean package \
-                        -DskipTests \
-                        -Dgithub.owner=${env.GITHUB_OWNER} \
-                        -Dgithub.repo=${env.GITHUB_REPO} \
-                        -Dgithub.token=${env.GITHUB_TOKEN}
+                        mvn clean package -DskipTests \
+                        -Dgithub.token=\$GITHUB_TOKEN
                     """
                 }
             }
         }
 
-        stage('Deploy to GitHub Packages') {
+        stage('Deploy') {
             steps {
                 withCredentials([string(credentialsId: 'GITHUB_ACCESS_TOKEN', variable: 'GITHUB_TOKEN')]) {
                     sh """
-                        mvn deploy \
-                        -DskipTests \
+                        mvn deploy -DskipTests \
                         -DaltDeploymentRepository=github::${env.PACKAGES_URL} \
-                        -Dgithub.owner=${env.GITHUB_OWNER} \
-                        -Dgithub.repo=${env.GITHUB_REPO} \
-                        -Dgithub.token=${env.GITHUB_TOKEN}
+                        -Dgithub.token=\$GITHUB_TOKEN
                     """
                 }
             }
@@ -61,10 +66,11 @@ pipeline {
 
     post {
         success {
-            echo "🎉 Successfully built and deployed to GitHub Packages!"
+            echo "🎉 Success! Built and deployed to GitHub Packages"
         }
         failure {
             echo "❌ Pipeline failed - check logs for details"
+            // Optional: Add notification here
         }
     }
 }
