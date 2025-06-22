@@ -4,7 +4,8 @@ pipeline {
     environment {
         GITHUB_OWNER = 'kehe0014'
         GITHUB_REPO = 'med-appointment'
-        IMAGE_NAME = "ghcr.io/${GITHUB_OWNER}/appointment-app:latest"
+        IMAGE_NAME = "ghcr.io/${env.GITHUB_OWNER}/appointment-app:latest"
+        PACKAGES_URL = "https://maven.pkg.github.com/${env.GITHUB_OWNER}/${env.GITHUB_REPO}"
     }
 
     stages {
@@ -14,20 +15,29 @@ pipeline {
             }
         }
 
-        stage('GitHub Auth Test') {
+        stage('Verify GitHub Authentication') {
             steps {
                 withCredentials([string(credentialsId: 'GITHUB_ACCESS_TOKEN', variable: 'GITHUB_TOKEN')]) {
-                    sh '''
-                        echo "🔐 Test GitHub token..."
-                        curl -s -o /dev/null -w "%{http_code}" \
-                        -H "Authorization: token $GITHUB_TOKEN" \
-                        https://api.github.com/user | grep 200 || exit 1
-                    '''
+                    script {
+                        echo "🔐 Validating GitHub authentication..."
+                        def authStatus = sh(
+                            script: 'curl -s -o /dev/null -w "%{http_code}" ' +
+                                    '-H "Authorization: token $GITHUB_TOKEN" ' +
+                                    '-H "Accept: application/vnd.github.v3+json" ' +
+                                    'https://api.github.com/user',
+                            returnStdout: true
+                        ).trim()
+
+                        if (authStatus != "200") {
+                            error("❌ GitHub authentication failed (HTTP ${authStatus})")
+                        }
+                        echo "✅ GitHub authentication successful"
+                    }
                 }
             }
         }
 
-        stage('Maven Build') {
+        stage('Build JAR') {
             steps {
                 sh 'mvn clean package -DskipTests'
             }
@@ -35,36 +45,30 @@ pipeline {
 
         stage('Build Docker Image') {
             steps {
-                sh 'docker compose -f docker-compose.yml build appointment-app'
+                script {
+                    sh "docker build -f docker/Dockerfile -t ${IMAGE_NAME} ."
+                }
             }
         }
 
-        stage('Tag and Push Image to GHCR') {
+        stage('Push Docker Image to GHCR') {
             steps {
                 withCredentials([string(credentialsId: 'GITHUB_ACCESS_TOKEN', variable: 'GITHUB_TOKEN')]) {
-                    sh '''
-                        echo "${GITHUB_TOKEN}" | docker login ghcr.io -u ${GITHUB_OWNER} --password-stdin
-
-                        # Tag image (si `docker-compose build` produit `appointment-app:latest`)
-                        docker tag appointment-app:latest ${IMAGE_NAME}
-
-                        # Push vers GitHub Container Registry
-                        docker push ${IMAGE_NAME}
-                    '''
+                    script {
+                        sh "echo $GITHUB_TOKEN | docker login ghcr.io -u ${GITHUB_OWNER} --password-stdin"
+                        sh "docker push ${IMAGE_NAME}"
+                    }
                 }
             }
         }
     }
 
     post {
-        always {
-            echo "🧹 Cleanup done"
-        }
         success {
-            echo "✅ Pipeline OK: image poussée sur GHCR"
+            echo "🎉 Pipeline completed: Docker image pushed to GitHub Container Registry"
         }
         failure {
-            echo "❌ Échec - vérifie les étapes ci-dessus"
+            echo "❌ Pipeline failed. Check logs for errors."
         }
     }
 }
