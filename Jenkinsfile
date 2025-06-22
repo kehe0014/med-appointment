@@ -4,16 +4,18 @@ pipeline {
     environment {
         GITHUB_OWNER = 'kehe0014'
         GITHUB_REPO = 'med-appointment'
-        IMAGE_NAME = "ghcr.io/${GITHUB_OWNER}/${GITHUB_REPO}"  // Lowercase for GHCR
-        VERSION = sh(script: 'mvn help:evaluate -Dexpression=project.version -q -DforceStdout', returnStdout: true).trim().toLowerCase()
-        TIMESTAMP = new Date().format('yyyyMMdd-HHmmss')
+        // GHCR requires lowercase package names
+        IMAGE_NAME = "ghcr.io/${GITHUB_OWNER}/${GITHUB_REPO.toLowerCase()}"
+        VERSION = sh(script: 'mvn help:evaluate -Dexpression=project.version -q -DforceStdout', returnStdout: true).trim()
+        // Convert version to lowercase and replace special characters
+        SAFE_VERSION = "${VERSION}".toLowerCase().replace('-SNAPSHOT', '-snapshot')
     }
 
     stages {
         stage('Checkout') {
             steps {
                 checkout scm
-                // Generate Maven wrapper if missing
+                // Ensure Maven wrapper exists
                 sh 'mvn -N wrapper:wrapper || true'
             }
         }
@@ -22,7 +24,7 @@ pipeline {
             steps {
                 sh './mvnw clean package -DskipTests'
                 script {
-                    def jarFile = "target/${GITHUB_REPO}-${env.VERSION}.jar"
+                    def jarFile = "target/${GITHUB_REPO}-${VERSION}.jar"
                     if (!fileExists(jarFile)) {
                         error("❌ JAR file not found: ${jarFile}")
                     }
@@ -36,9 +38,8 @@ pipeline {
                     sh """
                     docker build -f docker/Dockerfile \
                       --build-arg JAR_FILE=target/${GITHUB_REPO}-${VERSION}.jar \
-                      -t ${IMAGE_NAME}:${VERSION} \
-                      -t ${IMAGE_NAME}:latest \
-                      -t ${IMAGE_NAME}:${TIMESTAMP} .
+                      -t ${IMAGE_NAME}:${SAFE_VERSION} \
+                      -t ${IMAGE_NAME}:latest .
                     """
                 }
             }
@@ -46,22 +47,28 @@ pipeline {
 
         stage('Push to GHCR') {
             steps {
-                withCredentials([string(credentialsId: 'GITHUB_ACCESS_TOKEN', variable: 'GITHUB_TOKEN']) {
+                withCredentials([string(credentialsId: 'GITHUB_ACCESS_TOKEN', variable: 'GH_TOKEN']) {
                     script {
-                        // Authenticate with GHCR
+                        // First authenticate - CRITICAL STEP
                         sh """
-                        echo \$GITHUB_TOKEN | docker login ghcr.io -u ${GITHUB_OWNER} --password-stdin || exit 1
+                        echo "Authenticating with GHCR..."
+                        echo \$GH_TOKEN | docker login ghcr.io \
+                          -u ${GITHUB_OWNER} \
+                          --password-stdin || exit 1
                         """
                         
                         // Push with retry logic
                         retry(3) {
                             sh """
-                            docker push ${IMAGE_NAME}:${VERSION}
+                            echo "Pushing ${IMAGE_NAME}:${SAFE_VERSION}"
+                            docker push ${IMAGE_NAME}:${SAFE_VERSION}
+                            
+                            echo "Pushing ${IMAGE_NAME}:latest"
                             docker push ${IMAGE_NAME}:latest
-                            docker push ${IMAGE_NAME}:${TIMESTAMP}
                             """
                         }
                         
+                        // Cleanup authentication
                         sh "docker logout ghcr.io"
                     }
                 }
@@ -73,8 +80,9 @@ pipeline {
                 branch 'main'
             }
             steps {
-                echo "🚀 Deployment would execute here (kubectl/helm commands)"
-                // sh "kubectl set image deployment/${GITHUB_REPO} ${GITHUB_REPO}=${IMAGE_NAME}:${VERSION}"
+                echo "🚀 Deployment would execute here"
+                // Example:
+                // sh "kubectl set image deployment/${GITHUB_REPO} ${GITHUB_REPO}=${IMAGE_NAME}:${SAFE_VERSION}"
             }
         }
     }
@@ -84,19 +92,18 @@ pipeline {
             script {
                 // Cleanup images
                 sh """
-                docker rmi ${IMAGE_NAME}:${VERSION} || true
+                docker rmi ${IMAGE_NAME}:${SAFE_VERSION} || true
                 docker rmi ${IMAGE_NAME}:latest || true
-                docker rmi ${IMAGE_NAME}:${TIMESTAMP} || true
                 """
             }
         }
         success {
-            echo "🎉 Pipeline succeeded! Image: ${IMAGE_NAME}:${VERSION}"
-            slackSend(color: 'good', message: "Success: ${env.JOB_NAME} #${env.BUILD_NUMBER}")
+            echo "🎉 Success! Image pushed to:"
+            echo " - ${IMAGE_NAME}:${SAFE_VERSION}"
+            echo " - ${IMAGE_NAME}:latest"
         }
         failure {
-            echo "❌ Pipeline failed - check logs for details"
-            slackSend(color: 'danger', message: "Failed: ${env.JOB_NAME} #${env.BUILD_NUMBER}")
+            echo "❌ Pipeline failed - check logs"
         }
     }
 }
