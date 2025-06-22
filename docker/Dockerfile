@@ -1,13 +1,19 @@
 # Build stage
 FROM eclipse-temurin:21-jdk-jammy as builder
 WORKDIR /workspace
-COPY . .
-RUN ./mvnw clean package -DskipTests
+
+# Install Maven
+RUN apt-get update && apt-get install -y maven
+
+COPY pom.xml .
+COPY src src
+
+# Build with installed Maven
+RUN mvn clean package -DskipTests
 
 # Runtime stage
 FROM eclipse-temurin:21-jre-jammy
 WORKDIR /app
-ARG JAR_FILE=target/*.jar
-COPY --from=builder /workspace/${JAR_FILE} app.jar
+COPY --from=builder /workspace/target/*.jar app.jar
 EXPOSE 9090
 ENTRYPOINT ["java", "-jar", "app.jar"]
