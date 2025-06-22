@@ -5,8 +5,10 @@ pipeline {
         GITHUB_OWNER = 'kehe0014'
         GITHUB_REPO = 'med-appointment'
         IMAGE_NAME = "ghcr.io/${GITHUB_OWNER}/appointment-app"
-        IMAGE_TAG = "latest"
         PACKAGES_URL = "https://maven.pkg.github.com/${GITHUB_OWNER}/${GITHUB_REPO}"
+        // Get version from pom.xml or use timestamp
+        VERSION = sh(script: 'mvn help:evaluate -Dexpression=project.version -q -DforceStdout', returnStdout: true).trim()
+        TIMESTAMP = new Date().format('yyyyMMdd-HHmmss')
     }
 
     stages {
@@ -16,82 +18,61 @@ pipeline {
             }
         }
 
-        stage('Verify GitHub Authentication') {
-            steps {
-                withCredentials([string(credentialsId: 'GITHUB_ACCESS_TOKEN', variable: 'GITHUB_TOKEN')]) {
-                    script {
-                        echo "🔐 Validating GitHub authentication..."
-                        def authStatus = sh(
-                            script: '''curl -s -o /dev/null -w "%{http_code}" \
-                                -H "Authorization: token $GITHUB_TOKEN" \
-                                -H "Accept: application/vnd.github.v3+json" \
-                                https://api.github.com/user''',
-                            returnStdout: true
-                        ).trim()
-                        if (authStatus != "200") {
-                            error("❌ GitHub authentication failed (HTTP ${authStatus})")
-                        }
-                        echo "✅ GitHub authentication successful"
-                    }
-                }
-            }
-        }
-
-        stage('Build Maven Package') {
+        stage('Build') {
             steps {
                 sh 'mvn clean package -DskipTests'
+                script {
+                    // Verify built JAR
+                    def jarFile = "target/med-rdv-${VERSION}.jar"
+                    if (!fileExists(jarFile)) {
+                        error("❌ JAR file not found: ${jarFile}")
+                    }
+                }
             }
         }
 
         stage('Build Docker Image') {
             steps {
-                withCredentials([string(credentialsId: 'GITHUB_ACCESS_TOKEN', variable: 'GITHUB_TOKEN')]) {
-                    script {
-                        // Verify JAR file exists
-                        def jarFile = 'target/med-rdv-0.0.1-SNAPSHOT.jar'
-                        if (!fileExists(jarFile)) {
-                            error("❌ JAR file not found: ${jarFile}")
-                        }
-                        
-                        // Build docker image
-                        sh """
-                        docker build -f docker/Dockerfile \
-                        --build-arg JAR_FILE=${jarFile} \
-                        -t ${IMAGE_NAME}:${IMAGE_TAG} .
-                        """
-                    }
+                script {
+                    docker.build("${IMAGE_NAME}:${VERSION}", 
+                               "--build-arg JAR_FILE=target/med-rdv-${VERSION}.jar -f docker/Dockerfile .")
+                    docker.image("${IMAGE_NAME}:${VERSION}").push()
+                    
+                    // Also tag as latest
+                    sh "docker tag ${IMAGE_NAME}:${VERSION} ${IMAGE_NAME}:latest"
+                    docker.image("${IMAGE_NAME}:latest").push()
+                    
+                    // Add timestamp tag for traceability
+                    sh "docker tag ${IMAGE_NAME}:${VERSION} ${IMAGE_NAME}:${TIMESTAMP}"
+                    docker.image("${IMAGE_NAME}:${TIMESTAMP}").push()
                 }
             }
         }
 
-        stage('Push Docker Image to GHCR') {
+        stage('Deploy') {
+            when {
+                branch 'main' // Only deploy from main branch
+            }
             steps {
-                withCredentials([string(credentialsId: 'GITHUB_ACCESS_TOKEN', variable: 'GITHUB_TOKEN')]) {
-                    script {
-                        // Authenticate Docker to GHCR
-                        sh "echo $GITHUB_TOKEN | docker login ghcr.io -u ${GITHUB_OWNER} --password-stdin"
-
-                        // Push image
-                        sh "docker push ${IMAGE_NAME}:${IMAGE_TAG}"
-
-                        // Optional: logout for cleanup
-                        sh "docker logout ghcr.io"
-                    }
+                script {
+                    // Example deployment command - adjust for your environment
+                    sh """
+                    kubectl set image deployment/appointment-app \
+                    appointment-app=${IMAGE_NAME}:${VERSION} --record
+                    """
                 }
             }
         }
     }
 
     post {
-        success {
-            echo "🎉 Pipeline succeeded: image pushed to ${IMAGE_NAME}:${IMAGE_TAG}"
-        }
-        failure {
-            echo "❌ Pipeline failed - check logs for details"
-        }
         always {
-            // Cleanup Docker images to free space on agent
-            sh "docker rmi ${IMAGE_NAME}:${IMAGE_TAG} || true"
+            // Cleanup Docker images
+            script {
+                sh "docker rmi ${IMAGE_NAME}:${VERSION} || true"
+                sh "docker rmi ${IMAGE_NAME}:latest || true"
+                sh "docker rmi ${IMAGE_NAME}:${TIMESTAMP} || true"
+            }
         }
     }
 }
